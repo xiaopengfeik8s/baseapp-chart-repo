@@ -1,9 +1,10 @@
-name: Release Charts
+name: Release Helm Charts
+
 on:
   push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
+    branches:
+      - main
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -13,21 +14,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure Git
+      - name: Configure Git user
         run: |
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
-      - name: Run chart-releaser
+      - name: Run chart-releaser job
         uses: helm/chart-releaser-action@v1.4.1
         env:
-          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"  
-      - name: github fast
-        run: |
-          git status
-          git checkout gh-pages
-          git pull
-          ls
-          sed -i "s/github.com/download.fastgit.org/g" index.yaml
-          git add index.yaml
-          git commit -m "update url"
-          git push
+          CR_TOKEN: "${{ secrets.GHA_TOKEN }}"
