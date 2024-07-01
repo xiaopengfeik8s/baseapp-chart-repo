@@ -59,7 +59,7 @@ securityContext: {}
 #namespace: default
 
 service:
-  # default：name-svc
+  # default：name-svc -》 jpi-java-svc
   #name: nginx
   #type:  ClusterIP/LoadBalancer
   type: LoadBalancer
