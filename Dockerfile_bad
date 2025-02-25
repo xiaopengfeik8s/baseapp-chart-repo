@@ -1,0 +1,22 @@
+FROM acr-panda-registry.cn-shanghai.cr.aliyuncs.com/baseimage/python:3
+LABEL maintainer="shawn.xiao@jll.com 2023.7.25"
+
+ARG ACCESS_KEY_ID
+ARG ACCESS_KEY_SECRET
+
+
+ENV ALIBABA_CLOUD_ACCESS_KEY_ID $ACCESS_KEY_ID
+ENV ALIBABA_CLOUD_ACCESS_KEY_SECRET $ACCESS_KEY_SECRET
+
+EXPOSE 8081
+COPY GetServiceProvidersPage.py /usr/local/bin/
+
+ 
+
+RUN apt-get update 
+RUN apt-get install bash jq -y
+RUN pip install flask
+RUN pip install jsonify
+RUN pip install aliyun-python-sdk-edas==3.26.8
+
+ENTRYPOINT ["/bin/sh","-c","exec python3 /usr/local/bin/GetServiceProvidersPage.py"]
