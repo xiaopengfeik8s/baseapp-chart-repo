@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ossupload-app
+  namespace: devops
+  labels:
+    app: ossupload
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ossupload
+  template:
+    metadata:
+      labels:
+        app: ossupload
+    spec:
+      containers:
+      - name: ossupload
+        image: ${IMAGE}
+        ports:
+        - containerPort: 80
+        env:
+        - name: FLASK_ENV
+          value: "production"
+        resources:
+          requests:
+            memory: "50Mi"
+            cpu: "10m"
+          limits:
+            memory: "1000Mi"
+            cpu: "1000m"
