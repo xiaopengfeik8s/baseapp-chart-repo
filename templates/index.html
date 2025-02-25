@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>File Upload - ossupload</title>
+    <link rel="icon" type="image/x-icon" href="/ossupload/static/assets/favicon.ico" />
+    <link href="/ossupload/static/bootstrap5/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/ossupload/static/css/styles.css" rel="stylesheet">
+    <script src="/ossupload/static/jquery-3.6.0/js/jquery-3.6.0.min.js"></script>
+    <style>
+        .drop-text {
+            color: #000; /* 修改文字颜色为黑色 */
+        }
+        .carousel-item {
+            height: 100vh;
+            background-size: cover;
+            background-position: center;
+        }
+        .masthead {
+            position: relative;
+            z-index: 2;
+        }
+        .carousel-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+    <!-- Background Carousel -->
+    <div id="backgroundCarousel" class="carousel slide carousel-container" data-bs-ride="carousel">
+        <div class="carousel-inner" id="carouselInner">
+            <!-- 动态生成的轮播项将插入到这里 -->
+        </div>
+    </div>
+    <!-- Upload Section -->
+    <div class="masthead">
+        <div class="masthead-content text-white">
+            <div class="container-fluid px-4 px-lg-0">
+                <h1 class="fst-italic lh-1 mb-4 text-center">Upload a File</h1>
+                <div id="alertContainer" class="mb-3"></div>
+                <form id="uploadForm">
+                    <div class="mb-3">
+                        <label for="fileInput" class="form-label"></label>
+                        <div id="dropZone" class="border border-primary rounded p-4 text-center bg-light" style="cursor: pointer;">
+                            <i class="bi bi-upload display-4 mb-2"></i>
+                            <div class="drop-text">Drag and drop a file here or click to select</div>
+                            <div class="file-info text-success mt-2 d-none"></div>
+                        </div>
+                        <input type="file" class="d-none" name="file" id="fileInput" required>
+                        <div class="invalid-feedback">Please select a valid file</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">文件权限设置</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="acl" id="aclPrivate" value="private" checked>
+                            <label class="form-check-label" for="aclPrivate">
+                                私有（仅授权用户可访问）
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="acl" id="aclPublic" value="public-read">
+                            <label class="form-check-label" for="aclPublic">
+                                公开读（所有人可访问）
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="emailInput" class="form-label">Email address</label>
+                        <input type="email" class="form-control" id="emailInput" placeholder="name@example.com" required>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="button" class="btn btn-primary btn-lg" onclick="uploadFile()">上传</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Progress Modal -->
+    <div class="modal fade" id="progressModal" tabindex="-1" aria-labelledby="progressModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="progressModalLabel">文件上传进度</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="progress">
+              <div id="uploadProgress" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                <span id="progressText" class="progress-text">0%</span>
+              </div>
+            </div>
+            <div id="uploadResult" class="mt-3"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/ossupload/static/bootstrap5/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 上传进度
+        const progressModal = new bootstrap.Modal(document.getElementById('progressModal'));
+        const progressBar = document.getElementById('uploadProgress');
+        const progressText = document.getElementById('progressText');
+        const uploadResult = document.getElementById('uploadResult');
+        const alertContainer = document.getElementById('alertContainer');
+
+        let maxFileSize = null;
+
+        function formatBytes(bytes) {
+            const units = ['B', 'KB', 'MB', 'GB'];
+            let size = bytes;
+            let unitIndex = 0;
+            while (size >= 1024 && unitIndex < units.length - 1) {
+                size /= 1024;
+                unitIndex++;
+            }
+            return `${size.toFixed(2)} ${units[unitIndex]}`;
+        }
+
+        async function getServerConfig() {
+            try {
+                const response = await fetch('/ossupload/config');
+                if (!response.ok) throw new Error('Failed to get server config');
+                const config = await response.json();
+                maxFileSize = config.max_file_size;
+            } catch (error) {
+                console.error('Failed to get server config:', error);
+                // Fallback to 100MB if config fails
+                maxFileSize = 100 * 1024 * 1024;
+            }
+        }
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const emailInput = document.getElementById('emailInput');
+            const aclSelect = document.querySelector('input[name="acl"]:checked');
+            
+            if (!fileInput.files[0]) {
+                alertContainer.innerHTML = `
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        请选择要上传的文件
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                `;
+                resetProgress();
+                return;
+            }
+
+            // Get server config if not already loaded
+            if (maxFileSize === null) {
+                await getServerConfig();
+            }
+
+            // Check file size before upload
+            if (fileInput.files[0].size > maxFileSize) {
+                progressModal.show();
+                uploadResult.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h4>上传失败</h4>
+                        <p>文件太大，超过服务器限制</p>
+                        <p>最大允许大小：${formatBytes(maxFileSize)}</p>
+                    </div>
+                `;
+                resetProgress();
+                return;
+            }
+            
+            if (!emailInput.checkValidity()) {
+                alertContainer.innerHTML = `
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        请输入有效的邮箱地址
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                `;
+                resetProgress();
+                return;
+            }
+
+            // 重置进度条
+            progressBar.style.width = '0%';
+            progressText.textContent = '0%';
+            uploadResult.textContent = '';
+            progressModal.show();
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('email', emailInput.value);
+            formData.append('acl', aclSelect.value);
+            formData.append('file_path', `share/${emailInput.value}/`); // 添加文件路径
+
+            const xhr = new XMLHttpRequest();
+            
+            // 更新进度
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    progressBar.style.width = percent + '%';
+                    progressText.textContent = percent + '%';
+                    progressBar.setAttribute('aria-valuenow', percent);
+                }
+            };
+
+            xhr.onload = function() {
+                if (xhr.status === 413) {
+                    uploadResult.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h4>上传失败</h4>
+                            <p>文件太大，超过服务器限制</p>
+                            <p>状态码: ${xhr.status}</p>
+                            <p>错误信息: ${xhr.statusText}</p>
+                        </div>
+                    `;
+                    resetProgress();
+                    return;
+                }
+
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    if (data.success) {
+                        uploadResult.innerHTML = `
+                            <div class="alert alert-success">
+                                <h4>上传成功！</h4>
+                                <p>文件名：${data.file_name}</p>
+                                <p>文件大小：${(data.file_size / 1024).toFixed(2)} KB</p>
+                                <p>下载链接：<a href="${data.download_url}" target="_blank">点击下载</a></p>
+                            </div>
+                        `;
+                    } else {
+                        uploadResult.innerHTML = `
+                            <div class="alert alert-danger">
+                                <h4>上传失败</h4>
+                                <p>${data.error || '未知错误'}</p>
+                                ${data.details ? `<p>详细信息：${data.details}</p>` : ''}
+                            </div>
+                        `;
+                        resetProgress();
+                    }
+                } catch (e) {
+                    uploadResult.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h4>上传失败</h4>
+                            <p>服务器响应解析失败</p>
+                        </div>
+                    `;
+                    resetProgress();
+                }
+            };
+
+            xhr.onerror = function() {
+                uploadResult.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h4>上传失败</h4>
+                        <p>网络错误，请检查连接后重试</p>
+                        <p>状态码: ${xhr.status}</p>
+                        <p>错误信息: ${xhr.statusText}</p>
+                    </div>
+                `;
+                resetProgress();
+            };
+
+            xhr.open('POST', '/ossupload/upload');
+            xhr.setRequestHeader('Accept', 'application/json');
+            // Don't set Content-Type header - let browser handle it for FormData
+            xhr.send(formData);
+        }
+
+        function resetProgress() {
+            progressBar.style.width = '0%';
+            progressText.textContent = '0%';
+            progressBar.setAttribute('aria-valuenow', 0);
+        }
+
+        // 动态生成轮播项
+        $(document).ready(function() {
+            const imagePaths = [
+                '/ossupload/static/assets/img/background1.jpg',
+                '/ossupload/static/assets/img/background2.jpg',
+                '/ossupload/static/assets/img/background3.jpg',
+                '/ossupload/static/assets/img/background4.jpg',
+                '/ossupload/static/assets/img/background5.jpg',
+                // 添加更多图片路径
+            ];
+
+            const carouselInner = $('#carouselInner');
+            imagePaths.forEach((path, index) => {
+                const isActive = index === 0 ? 'active' : '';
+                const carouselItem = `
+                    <div class="carousel-item ${isActive}" style="background-image: url('${path}');"></div>
+                `;
+                carouselInner.append(carouselItem);
+            });
+
+            // Drag and drop functionality
+            const dropZone = $('#dropZone');
+            const fileInput = $('#fileInput');
+            const dropText = $('.drop-text');
+            const fileInfo = $('.file-info');
+
+            dropZone.on('click', function() {
+                fileInput.trigger('click');
+            });
+
+            dropZone.on('dragover', function(e) {
+                e.preventDefault();
+                dropZone.addClass('dragover');
+            });
+
+            dropZone.on('dragleave', function() {
+                dropZone.removeClass('dragover');
+            });
+
+            dropZone.on('drop', function(e) {
+                e.preventDefault();
+                dropZone.removeClass('dragover');
+                if (e.originalEvent.dataTransfer.files.length) {
+                    fileInput[0].files = e.originalEvent.dataTransfer.files;
+                    updateFileDisplay();
+                }
+            });
+
+            fileInput.on('change', function() {
+                updateFileDisplay();
+            });
+
+            function updateFileDisplay() {
+                if (fileInput[0].files.length > 0) {
+                    const file = fileInput[0].files[0];
+                    dropText.addClass('d-none');
+                    fileInfo.removeClass('d-none').text(`Selected file: ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`);
+                    alertContainer.innerHTML = ''; // 清除提示信息
+                } else {
+                    dropText.removeClass('d-none');
+                    fileInfo.addClass('d-none');
+                }
+            }
+
+            // 清除邮箱输入框的提示信息
+            $('#emailInput').on('input', function() {
+                alertContainer.innerHTML = '';
+            });
+        });
+    </script>
+</body>
+</html>
